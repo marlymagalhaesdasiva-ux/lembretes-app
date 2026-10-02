@@ -1,0 +1,82 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#2563eb">
+<link rel="icon" href="icon-192.png"><title>Lembretes</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;background:#f3f4f6;color:#111}
+main{max-width:480px;margin:auto;padding:16px}
+.c{background:#fff;border-radius:12px;padding:14px;margin:10px 0;box-shadow:0 1px 3px #0002}
+input,select,textarea,button{width:100%;box-sizing:border-box;padding:12px;margin:4px 0;font-size:16px;border-radius:8px;border:1px solid #ccc}
+button{background:#2563eb;color:#fff;border:0}button.s{background:#e5e7eb;color:#111}small{color:#555}
+</style></head><body><main id="app">Carregando...</main>
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import {getAuth,onAuthStateChanged,createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import {getFirestore,doc,getDoc,setDoc,updateDoc,addDoc,collection,query,where,getDocs,arrayUnion,Timestamp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {getMessaging,getToken} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js";
+
+const fb=initializeApp({
+  apiKey:"AIzaSyCrDpTg4upRVdt8VmgZ9G-XVsXl5ND3N-Q",
+  authDomain:"app-lembretes-fa8bb.firebaseapp.com",
+  projectId:"app-lembretes-fa8bb",
+  storageBucket:"app-lembretes-fa8bb.firebasestorage.app",
+  messagingSenderId:"26032179656",
+  appId:"1:26032179656:web:276169e4a1c834d82458fd"});
+const VAPID="BIouedUtUIXjrdTCYlmS_QONz_Qt2gWlP08dY8GO1viXTszw4mMuYAfOlQsVV6ebHuBidYsMB_fRpRza6Qe6vmk";
+const auth=getAuth(fb),db=getFirestore(fb),$=id=>document.getElementById(id),app=$("app");
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const dt=a=>a.prazo.toDate().toLocaleDateString("pt-BR");
+let me;
+if("serviceWorker" in navigator)navigator.serviceWorker.register("firebase-messaging-sw.js");
+
+window.sair=()=>signOut(auth);
+const top=()=>`<div style="display:flex;justify-content:space-between;align-items:center"><b>Olá, ${esc(me.nome)}</b><button class=s style="width:auto" onclick="sair()">Sair</button></div>`;
+
+function login(){
+  app.innerHTML=`<h2>Lembretes</h2><div class=c><input id=n placeholder="Seu nome (para criar conta)"><select id=t><option value=aluno>Sou aluno</option><option value=professor>Sou professor</option></select><input id=e type=email placeholder="E-mail"><input id=p type=password placeholder="Senha (mín. 6)"><button id=in>Entrar</button><button class=s id=up>Criar conta</button><small id=m></small></div>`;
+  $("in").onclick=()=>signInWithEmailAndPassword(auth,$("e").value,$("p").value).catch(x=>$("m").textContent="Erro: "+x.code);
+  $("up").onclick=async()=>{try{const r=await createUserWithEmailAndPassword(auth,$("e").value,$("p").value);
+    await setDoc(doc(db,"usuarios",r.user.uid),{nome:$("n").value||"Sem nome",tipo:$("t").value});location.reload()}catch(x){$("m").textContent="Erro: "+x.code}};
+}
+
+onAuthStateChanged(auth,async u=>{
+  if(!u)return login();
+  const s=await getDoc(doc(db,"usuarios",u.uid));if(!s.exists())return;
+  me={id:u.uid,...s.data()};me.tipo==="professor"?prof():aluno();
+});
+
+async function prof(){
+  const g=(c,f)=>getDocs(query(collection(db,c),where(f,"==",me.id)));
+  const [ts,as]=await Promise.all([g("turmas","professorId"),g("atividades","professorId")]);
+  const turmas=ts.docs.map(d=>({id:d.id,...d.data()}));
+  const total={};for(const t of turmas)total[t.id]=(await getDocs(collection(db,"turmas",t.id,"membros"))).size;
+  const ativ=as.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>b.prazo.seconds-a.prazo.seconds);
+  let rows="";for(const a of ativ){const f=(await getDocs(query(collection(db,"conclusoes"),where("atividadeId","==",a.id)))).size;
+    rows+=`<div class=c><b>${esc(a.titulo)}</b><br><small>Prazo ${dt(a)} · ${f} de ${total[a.turmaId]||0} fizeram</small></div>`}
+  app.innerHTML=top()+`<h3>Turmas</h3>`+turmas.map(t=>`<div class=c><b>${esc(t.nome)}</b><br><small>Código para os alunos: <b>${t.codigo}</b></small></div>`).join("")+
+  `<div class=c><input id=tn placeholder="Nome da nova turma"><button onclick="novaTurma()">Criar turma</button></div>`+
+  (turmas.length?`<h3>Nova atividade</h3><div class=c><select id=at>${turmas.map(t=>`<option value=${t.id}>${esc(t.nome)}</option>`).join("")}</select><input id=ti placeholder="Título"><textarea id=de placeholder="Descrição"></textarea><input id=pz type=date><button onclick="novaAtiv()">Publicar</button></div>`:"")+
+  `<h3>Atividades</h3>`+rows;
+  window.novaTurma=async()=>{if(!$("tn").value)return;await addDoc(collection(db,"turmas"),{nome:$("tn").value,codigo:Math.random().toString(36).slice(2,7).toUpperCase(),professorId:me.id});prof()};
+  window.novaAtiv=async()=>{if(!$("ti").value||!$("pz").value)return alert("Preencha título e prazo");
+    await addDoc(collection(db,"atividades"),{turmaId:$("at").value,titulo:$("ti").value,descricao:$("de").value,prazo:Timestamp.fromDate(new Date($("pz").value+"T23:59:00")),professorId:me.id});prof()};
+}
+
+async function aluno(){
+  me={...me,...(await getDoc(doc(db,"usuarios",me.id))).data()};
+  const ids=(me.turmas||[]).slice(0,30);let ativ=[];
+  if(ids.length)ativ=(await getDocs(query(collection(db,"atividades"),where("turmaId","in",ids)))).docs.map(d=>({id:d.id,...d.data()}));
+  const feitas=new Set((await getDocs(query(collection(db,"conclusoes"),where("alunoId","==",me.id)))).docs.map(d=>d.data().atividadeId));
+  const now=Date.now(),pend=ativ.filter(a=>!feitas.has(a.id)&&a.prazo.toMillis()>now).sort((a,b)=>a.prazo.seconds-b.prazo.seconds);
+  app.innerHTML=top()+`<div class=c><button onclick="notif()">🔔 Ativar lembretes neste aparelho</button><input id=cod placeholder="Código da turma"><button class=s onclick="entrar()">Entrar na turma</button></div><h3>Pendentes (${pend.length})</h3>`+
+  (pend.map(a=>`<div class=c><b>${esc(a.titulo)}</b><br><small>${esc(a.descricao||"")}<br>Prazo ${dt(a)}</small><button onclick="feito('${a.id}')">Já fiz</button></div>`).join("")||"<div class=c>Nada pendente 🎉</div>");
+  window.entrar=async()=>{const q=await getDocs(query(collection(db,"turmas"),where("codigo","==",$("cod").value.trim().toUpperCase())));
+    if(q.empty)return alert("Código não encontrado");const t=q.docs[0].id;
+    await setDoc(doc(db,"turmas",t,"membros",me.id),{nome:me.nome});await updateDoc(doc(db,"usuarios",me.id),{turmas:arrayUnion(t)});aluno()};
+  window.feito=async id=>{await setDoc(doc(db,"conclusoes",id+"_"+me.id),{atividadeId:id,alunoId:me.id,feitoEm:Timestamp.now()});aluno()};
+  window.notif=async()=>{try{if(await Notification.requestPermission()!=="granted")return alert("Permissão negada");
+    const reg=await navigator.serviceWorker.register("firebase-messaging-sw.js");
+    const tk=await getToken(getMessaging(fb),{vapidKey:VAPID,serviceWorkerRegistration:reg});
+    await updateDoc(doc(db,"usuarios",me.id),{token:tk});alert("Lembretes ativados!")}catch(x){alert("Erro: "+x.message)}};
+}
+</script></body></html>

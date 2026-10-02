@@ -1,0 +1,9 @@
+importScripts("https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js","https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js");
+firebase.initializeApp({
+  apiKey:"AIzaSyCrDpTg4upRVdt8VmgZ9G-XVsXl5ND3N-Q",
+  authDomain:"app-lembretes-fa8bb.firebaseapp.com",
+  projectId:"app-lembretes-fa8bb",
+  storageBucket:"app-lembretes-fa8bb.firebasestorage.app",
+  messagingSenderId:"26032179656",
+  appId:"1:26032179656:web:276169e4a1c834d82458fd"});
+firebase.messaging();
