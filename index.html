@@ -12,7 +12,7 @@ button{background:#2563eb;color:#fff;border:0}button.s{background:#e5e7eb;color:
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import {getAuth,onAuthStateChanged,createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import {getFirestore,doc,getDoc,setDoc,updateDoc,addDoc,collection,query,where,getDocs,arrayUnion,Timestamp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {getFirestore,doc,getDoc,setDoc,updateDoc,addDoc,collection,query,where,getDocs,arrayUnion,Timestamp,deleteDoc} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {getMessaging,getToken} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js";
 
 const fb=initializeApp({
@@ -58,11 +58,23 @@ async function prof(){
   const ativ=as.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>b.prazo.seconds-a.prazo.seconds);
   let rows="";for(const a of ativ){const fe=new Set((await getDocs(query(collection(db,"conclusoes"),where("atividadeId","==",a.id)))).docs.map(d=>d.data().alunoId));
     const m=memb[a.turmaId]||[],falta=m.filter(x=>!fe.has(x.id)),tn=(turmas.find(t=>t.id===a.turmaId)||{}).nome||"";
-    rows+=`<div class=c><b>${esc(a.titulo)}</b><br><small>${esc(tn)} · Prazo ${dt(a)} · ${m.length-falta.length} de ${m.length} fizeram</small><details><summary><small>Quem falta (${falta.length})</small></summary><small>${falta.map(x=>esc(x.nome)).join(", ")||"Ninguém 🎉"}</small></details></div>`}
-  app.innerHTML=top()+`<h3>Turmas</h3>`+turmas.map(t=>`<div class=c><b>${esc(t.nome)}</b><br><small>Código para os alunos: <b>${t.codigo}</b></small></div>`).join("")+
+    rows+=`<div class=c><b>${esc(a.titulo)}</b><br><small>${esc(tn)} · Prazo ${dt(a)} · ${m.length-falta.length} de ${m.length} fizeram</small><details><summary><small>Quem falta (${falta.length})</small></summary><small>${falta.map(x=>esc(x.nome)).join(", ")||"Ninguém 🎉"}</small></details><div style="display:flex;gap:8px"><button class=s onclick="editAtiv('${a.id}')">Editar</button><button class=s onclick="delAtiv('${a.id}')">Excluir</button></div></div>`}
+  app.innerHTML=top()+`<h3>Turmas</h3>`+turmas.map(t=>`<div class=c><b>${esc(t.nome)}</b><br><small>Código para os alunos: <b>${t.codigo}</b></small><div style="display:flex;gap:8px"><button class=s onclick="editTurma('${t.id}')">Renomear</button><button class=s onclick="delTurma('${t.id}')">Excluir</button></div></div>`).join("")+
   `<div class=c><input id=tn placeholder="Nome da nova turma"><button onclick="novaTurma()">Criar turma</button></div>`+
   (turmas.length?`<h3>Nova atividade</h3><div class=c><select id=at>${turmas.map(t=>`<option value=${t.id}>${esc(t.nome)}</option>`).join("")}</select><input id=ti placeholder="Título"><textarea id=de placeholder="Descrição"></textarea><input id=pz type=date><button onclick="novaAtiv()">Publicar</button></div>`:"")+
   `<h3>Atividades</h3>`+rows;
+  const A={},T={};ativ.forEach(a=>A[a.id]=a);turmas.forEach(t=>T[t.id]=t);
+  window.editAtiv=async id=>{const a=A[id],ti=prompt("Título:",a.titulo);if(ti===null)return;
+    const de=prompt("Descrição:",a.descricao||"");if(de===null)return;
+    const pz=prompt("Prazo (DD/MM/AAAA):",a.prazo.toDate().toLocaleDateString("pt-BR"));if(pz===null)return;
+    const [d,m,y]=pz.split("/").map(Number),nd=new Date(y,m-1,d,23,59);
+    if(!ti.trim()||isNaN(nd))return alert("Dados inválidos. Use o prazo como DD/MM/AAAA.");
+    await updateDoc(doc(db,"atividades",id),{titulo:ti.trim(),descricao:de,prazo:Timestamp.fromDate(nd)});prof()};
+  window.delAtiv=async id=>{if(confirm("Excluir esta atividade?")){await deleteDoc(doc(db,"atividades",id));prof()}};
+  window.editTurma=async id=>{const n=prompt("Novo nome da turma:",T[id].nome);if(n&&n.trim()){await updateDoc(doc(db,"turmas",id),{nome:n.trim()});prof()}};
+  window.delTurma=async id=>{if(!confirm("Excluir a turma e todas as suas atividades?"))return;
+    for(const a of ativ.filter(x=>x.turmaId===id))await deleteDoc(doc(db,"atividades",a.id));
+    await deleteDoc(doc(db,"turmas",id));prof()};
   window.novaTurma=async()=>{if(!$("tn").value)return;let c;do{c=Math.random().toString(36).slice(2,8).toUpperCase()}while(c.length<6||(await getDoc(doc(db,"turmas",c))).exists());
     await setDoc(doc(db,"turmas",c),{nome:$("tn").value,codigo:c,professorId:me.id});prof()};
   window.novaAtiv=async()=>{if(!$("ti").value||!$("pz").value)return alert("Preencha título e prazo");
