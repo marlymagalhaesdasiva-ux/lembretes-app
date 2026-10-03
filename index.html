@@ -11,7 +11,7 @@ button{background:#2563eb;color:#fff;border:0}button.s{background:#e5e7eb;color:
 </style></head><body><main id="app">Carregando...</main>
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-import {getAuth,onAuthStateChanged,createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import {getAuth,onAuthStateChanged,createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut,sendPasswordResetEmail} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {getFirestore,doc,getDoc,setDoc,updateDoc,addDoc,collection,query,where,getDocs,arrayUnion,Timestamp,deleteDoc} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {getMessaging,getToken} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js";
 
@@ -33,8 +33,10 @@ window.sair=()=>signOut(auth);
 const top=()=>`<div style="display:flex;justify-content:space-between;align-items:center"><b>Olá, ${esc(me.nome)}</b><button class=s style="width:auto" onclick="sair()">Sair</button></div>`;
 
 function login(){
-  app.innerHTML=`<h2>Lembretes</h2><div class=c><input id=n placeholder="Seu nome (para criar conta)"><select id=t onchange="document.getElementById('cp').style.display=this.value=='professor'?'block':'none'"><option value=aluno>Sou aluno</option><option value=professor>Sou professor</option></select><input id=cp placeholder="Código de professor" style="display:none"><input id=e type=email placeholder="E-mail"><input id=p type=password placeholder="Senha (mín. 6)"><button id=in>Entrar</button><button class=s id=up>Criar conta</button><small id=m></small></div>`;
+  app.innerHTML=`<h2>Lembretes</h2><div class=c><input id=n placeholder="Seu nome (para criar conta)"><select id=t onchange="document.getElementById('cp').style.display=this.value=='professor'?'block':'none'"><option value=aluno>Sou aluno</option><option value=professor>Sou professor</option></select><input id=cp placeholder="Código de professor" style="display:none"><input id=e type=email placeholder="E-mail"><input id=p type=password placeholder="Senha (mín. 6)"><button id=in>Entrar</button><button class=s id=up>Criar conta</button><button class=s id=rs>Esqueci minha senha</button><small id=m></small></div>`;
   $("in").onclick=()=>signInWithEmailAndPassword(auth,$("e").value,$("p").value).catch(x=>$("m").textContent="Erro: "+x.code);
+  $("rs").onclick=async()=>{const e=$("e").value.trim();if(!e)return $("m").textContent="Digite seu e-mail no campo acima.";
+    try{await sendPasswordResetEmail(auth,e);$("m").textContent="Se esse e-mail tiver conta, enviamos um link para criar a nova senha. Olhe também o spam."}catch(x){$("m").textContent="Erro: "+x.code}};
   $("up").onclick=async()=>{let r;try{r=await createUserWithEmailAndPassword(auth,$("e").value,$("p").value)}catch(x){return $("m").textContent="Erro: "+x.code}
     const d={nome:$("n").value||"Sem nome",tipo:$("t").value};if(d.tipo==="professor")d.codigoProf=$("cp").value.trim();
     try{await setDoc(doc(db,"usuarios",r.user.uid),d);location.reload()}catch(x){await r.user.delete();alert(d.tipo==="professor"?"Código de professor incorreto.":"Erro ao criar a conta.")}};
