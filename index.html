@@ -33,17 +33,22 @@ window.sair=()=>signOut(auth);
 const top=()=>`<div style="display:flex;justify-content:space-between;align-items:center"><b>Olá, ${esc(me.nome)}</b><button class=s style="width:auto" onclick="sair()">Sair</button></div>`;
 
 function login(){
-  app.innerHTML=`<h2>Lembretes</h2><div class=c><input id=n placeholder="Seu nome (para criar conta)"><select id=t><option value=aluno>Sou aluno</option><option value=professor>Sou professor</option></select><input id=e type=email placeholder="E-mail"><input id=p type=password placeholder="Senha (mín. 6)"><button id=in>Entrar</button><button class=s id=up>Criar conta</button><small id=m></small></div>`;
+  app.innerHTML=`<h2>Lembretes</h2><div class=c><input id=n placeholder="Seu nome (para criar conta)"><select id=t onchange="document.getElementById('cp').style.display=this.value=='professor'?'block':'none'"><option value=aluno>Sou aluno</option><option value=professor>Sou professor</option></select><input id=cp placeholder="Código de professor" style="display:none"><input id=e type=email placeholder="E-mail"><input id=p type=password placeholder="Senha (mín. 6)"><button id=in>Entrar</button><button class=s id=up>Criar conta</button><small id=m></small></div>`;
   $("in").onclick=()=>signInWithEmailAndPassword(auth,$("e").value,$("p").value).catch(x=>$("m").textContent="Erro: "+x.code);
-  $("up").onclick=async()=>{try{const r=await createUserWithEmailAndPassword(auth,$("e").value,$("p").value);
-    await setDoc(doc(db,"usuarios",r.user.uid),{nome:$("n").value||"Sem nome",tipo:$("t").value});location.reload()}catch(x){$("m").textContent="Erro: "+x.code}};
+  $("up").onclick=async()=>{let r;try{r=await createUserWithEmailAndPassword(auth,$("e").value,$("p").value)}catch(x){return $("m").textContent="Erro: "+x.code}
+    const d={nome:$("n").value||"Sem nome",tipo:$("t").value};if(d.tipo==="professor")d.codigoProf=$("cp").value.trim();
+    try{await setDoc(doc(db,"usuarios",r.user.uid),d);location.reload()}catch(x){await r.user.delete();alert(d.tipo==="professor"?"Código de professor incorreto.":"Erro ao criar a conta.")}};
 }
 
 onAuthStateChanged(auth,async u=>{
   if(!u)return login();
-  const s=await getDoc(doc(db,"usuarios",u.uid));if(!s.exists())return;
-  me={id:u.uid,...s.data()};me.tipo==="professor"?prof():aluno();
+  try{
+    const s=await getDoc(doc(db,"usuarios",u.uid));
+    if(!s.exists())return erro("Esta conta ficou sem perfil. Toque em Sair e crie a conta de novo (ou use outro e-mail).");
+    me={id:u.uid,...s.data()};await (me.tipo==="professor"?prof():aluno());
+  }catch(x){erro("Erro: "+(x.code||x.message))}
 });
+function erro(t){app.innerHTML=`<div class=c><b>Algo deu errado</b><br><small>${esc(t)}</small><button onclick="sair()">Sair</button></div>`}
 
 async function prof(){
   const g=(c,f)=>getDocs(query(collection(db,c),where(f,"==",me.id)));
@@ -57,7 +62,8 @@ async function prof(){
   `<div class=c><input id=tn placeholder="Nome da nova turma"><button onclick="novaTurma()">Criar turma</button></div>`+
   (turmas.length?`<h3>Nova atividade</h3><div class=c><select id=at>${turmas.map(t=>`<option value=${t.id}>${esc(t.nome)}</option>`).join("")}</select><input id=ti placeholder="Título"><textarea id=de placeholder="Descrição"></textarea><input id=pz type=date><button onclick="novaAtiv()">Publicar</button></div>`:"")+
   `<h3>Atividades</h3>`+rows;
-  window.novaTurma=async()=>{if(!$("tn").value)return;await addDoc(collection(db,"turmas"),{nome:$("tn").value,codigo:Math.random().toString(36).slice(2,7).toUpperCase(),professorId:me.id});prof()};
+  window.novaTurma=async()=>{if(!$("tn").value)return;let c;do{c=Math.random().toString(36).slice(2,8).toUpperCase()}while(c.length<6||(await getDoc(doc(db,"turmas",c))).exists());
+    await setDoc(doc(db,"turmas",c),{nome:$("tn").value,codigo:c,professorId:me.id});prof()};
   window.novaAtiv=async()=>{if(!$("ti").value||!$("pz").value)return alert("Preencha título e prazo");
     await addDoc(collection(db,"atividades"),{turmaId:$("at").value,titulo:$("ti").value,descricao:$("de").value,prazo:Timestamp.fromDate(new Date($("pz").value+"T23:59:00")),professorId:me.id});prof()};
 }
@@ -70,8 +76,8 @@ async function aluno(){
   const now=Date.now(),pend=ativ.filter(a=>!feitas.has(a.id)&&a.prazo.toMillis()>now).sort((a,b)=>a.prazo.seconds-b.prazo.seconds);
   app.innerHTML=top()+`<div class=c><button onclick="notif()">🔔 Ativar lembretes neste aparelho</button><input id=cod placeholder="Código da turma"><button class=s onclick="entrar()">Entrar na turma</button></div><h3>Pendentes (${pend.length})</h3>`+
   (pend.map(a=>`<div class=c><b>${esc(a.titulo)}</b><br><small>${esc(a.descricao||"")}<br>Prazo ${dt(a)}</small><button onclick="feito('${a.id}')">Já fiz</button></div>`).join("")||"<div class=c>Nada pendente 🎉</div>");
-  window.entrar=async()=>{const q=await getDocs(query(collection(db,"turmas"),where("codigo","==",$("cod").value.trim().toUpperCase())));
-    if(q.empty)return alert("Código não encontrado");const t=q.docs[0].id;
+  window.entrar=async()=>{const t=$("cod").value.trim().toUpperCase();
+    if(!t||!(await getDoc(doc(db,"turmas",t))).exists())return alert("Código não encontrado");
     await setDoc(doc(db,"turmas",t,"membros",me.id),{nome:me.nome});await updateDoc(doc(db,"usuarios",me.id),{turmas:arrayUnion(t)});aluno()};
   window.feito=async id=>{await setDoc(doc(db,"conclusoes",id+"_"+me.id),{atividadeId:id,alunoId:me.id,feitoEm:Timestamp.now()});aluno()};
   window.notif=async()=>{try{if(await Notification.requestPermission()!=="granted")return alert("Permissão negada");
